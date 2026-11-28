@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/msckite/az-platform-kite/refs/tags/v3.0.0/schemas/global-config.schema.json",
+  "templateVersion": "1.1.0",
+  "kiteVersion": "3.0.0", // Kite release the pipelines install, e.g. "1.1.0"; filled in by New-PlatformConfigStructure
+  "tenantId": "19d0984a-1ba6-4103-9c8d-a38e9a2bf22a",
+  "subscriptionId": "78bc1153-2aea-42f9-ad6a-54f5170a4c03",
+  "uniqueId": "N6ciQg02",
+  "serviceShort": "prekite",
+  "displayName": "Kite Sandbox",
+  "location": "westeurope",
+  "regionCode": "weu",
+  "sourceControl": {
+    "tool": "github",
+    "owner": "msckite",
+    "repository": "az-platform-kite-sandbox",
+    "branchStrategy": "release" // Default "github"
+  }
+}

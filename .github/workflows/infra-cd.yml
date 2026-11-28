@@ -1,0 +1,70 @@
+name: 'Infra CD (stg)'
+
+on:
+  push:
+    branches:
+      - 'main'
+    paths:
+      - 'iac/**'
+      # Release bookkeeping written by release-please: changes nothing that gets deployed
+      - '!iac/CHANGELOG.md'
+      - '!iac/version.txt'
+      - '.github/workflows/infra-*.yml'
+  # Manual rerun from main only; other branches are skipped by the job conditions below
+  workflow_dispatch:
+
+concurrency:
+  # Queue deployments instead of cancelling one that is already applying changes
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-stg:
+    name: Deploy (stg)
+    uses: ./.github/workflows/infra-provision.yml
+    # Never deploy a feature branch, also not through a manual run
+    if: |
+      github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      environment: stg-infra
+      what-if: false
+    secrets: inherit
+
+  mark-stg-verified:
+    name: Record staging deployment
+    needs: [deploy-stg]
+    if: |
+      needs.deploy-stg.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      # infra-release only deploys prd content that carries this status. Kept separate from the
+      # workload pipeline's own status, since infra and workload changes promote independently.
+      - name: Record 'iac' content as deployed to staging
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/stg-verification.sh mark iac kite/stg-infra
+
+  plan-prd:
+    name: Preflight (prd)
+    needs: [mark-stg-verified]
+    uses: ./.github/workflows/infra-provision.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      environment: prd-infra
+      what-if: true
+    secrets: inherit

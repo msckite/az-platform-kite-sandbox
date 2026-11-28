@@ -1,0 +1,67 @@
+name: 'Infra Release (prd)'
+
+on:
+  # Started by release-please.yml, or by hand to deploy a release again (e.g. after a failed prd run)
+  # or one you published yourself. Run it from main: the prd environments accept no other ref.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing infra release tag to deploy to prd, e.g. infra/v1.2.0
+        type: string
+        required: true
+
+concurrency:
+  # Queue prd deployments instead of cancelling one that is already applying changes
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify-stg-promotion:
+    name: Verify release content was deployed to staging
+    # Only 'infra/*' tagged releases trigger infra deploys; 'workload/*' releases are ignored here.
+    if: |
+      startsWith(inputs.tag, 'infra/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: read
+    outputs:
+      # The verified commit; deploying it instead of the tag means a moved tag changes nothing
+      sha: ${{ steps.verify.outputs.sha }}
+
+    steps:
+      # No 'ref': the check must run the script from main, never from the tagged commit
+      - name: Check out main with history and tags
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Confirm this content was deployed to staging
+        id: verify
+        shell: bash
+        # Pass the tag through the environment, never inline it into the script (script injection)
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash .github/scripts/stg-verification.sh verify iac kite/stg-infra "refs/tags/$RELEASE_TAG"
+          echo "sha=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" >> "$GITHUB_OUTPUT"
+
+  deploy-prd:
+    name: Deploy (prd)
+    needs: [verify-stg-promotion]
+    # Only ever deploy what the verification job approved; a skipped or failed check blocks prd
+    if: |
+      needs.verify-stg-promotion.result == 'success'
+    uses: ./.github/workflows/infra-provision.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      environment: prd-infra
+      what-if: false
+      ref: ${{ needs.verify-stg-promotion.outputs.sha }}
+    secrets: inherit
